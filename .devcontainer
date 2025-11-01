@@ -1,0 +1,25 @@
+{
+  "name": "trading-tool",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {},
+    "ghcr.io/devcontainers/features/postgres:2": {
+      "version": "16",
+      "database": "tradingtool",
+      "user": "postgres",
+      "password": "postgres"
+    },
+    "ghcr.io/devcontainers/features/redis:2": {}
+  },
+  "postCreateCommand": "python -m pip install --upgrade pip && if [ -f requirements.txt ]; then pip install -r requirements.txt; fi",
+  "forwardPorts": [5000, 5432, 6379],
+  "portsAttributes": {
+    "5000": { "label": "Flask API", "onAutoForward": "openBrowser" },
+    "5432": { "label": "Postgres" },
+    "6379": { "label": "Redis" }
+  },
+  "remoteEnv": {
+    "POSTGRES_URL": "postgresql://postgres:postgres@localhost:5432/tradingtool",
+    "REDIS_URL": "redis://localhost:6379/0"
+  }
+}
