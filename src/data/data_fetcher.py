@@ -136,11 +136,27 @@ class DataFetcher:
         logger.info(f"Successfully fetched data for {len(all_data)}/{len(self.pair_mappings)} pairs")
         return all_data
 
+    def get_realtime_price(self, pair_name: str) -> Optional[Dict]:
+        """
+        Get real-time price using OANDA (if available)
+        
+        Args:
+            pair_name: Trading pair name
+        
+        Returns:
+            Dictionary with bid/ask/mid prices or None
+        """
+        if self.oanda_fetcher and pair_name in self.oanda_pairs:
+            oanda_pair = self.oanda_pairs[pair_name]
+            return self.oanda_fetcher.get_current_price(oanda_pair)
+        return None
+    
     def load_data(
         self,
         pair_name: str,
         period: str = '60d',
-        interval: str = '1h'
+        interval: str = '1h',
+        use_oanda: Optional[bool] = None
     ) -> Optional[pd.DataFrame]:
         """
         Load data for a specific pair
@@ -159,8 +175,35 @@ class DataFetcher:
 
         ticker = self.pair_mappings[pair_name]
 
+        # Try OANDA first if available and pair is supported
+        if (use_oanda is not False) and self.oanda_fetcher and pair_name in self.oanda_pairs:
+            try:
+                # Convert interval to OANDA granularity
+                granularity_map = {
+                    '1m': 'M1', '5m': 'M5', '15m': 'M15', '30m': 'M30',
+                    '1h': 'H1', '4h': 'H4', '1d': 'D', '1w': 'W'
+                }
+                granularity = granularity_map.get(interval, 'H1')
+                
+                # Convert period to count (rough estimate)
+                count = 500  # OANDA max is 5000, use 500 for reasonable response time
+                
+                logger.info(f"Loading {pair_name} from OANDA - {period} @ {interval}")
+                data = self.oanda_fetcher.get_historical_data(
+                    pair_name,
+                    count=count,
+                    granularity=granularity
+                )
+                
+                if data is not None and not data.empty:
+                    logger.info(f"✅ Loaded {len(data)} rows from OANDA")
+                    return data
+            except Exception as e:
+                logger.warning(f"OANDA fetch failed for {pair_name}: {e}. Falling back to yfinance.")
+
+        # Fallback to yfinance
         try:
-            logger.info(f"Loading {pair_name} ({ticker}) - {period} @ {interval}")
+            logger.info(f"Loading {pair_name} ({ticker}) from yfinance - {period} @ {interval}")
 
             # Fetch from yfinance
             data = yf.download(
