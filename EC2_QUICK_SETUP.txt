@@ -1,0 +1,112 @@
+═══════════════════════════════════════════════════════════════
+🚀 QUICK SETUP COMMANDS FOR EC2
+═══════════════════════════════════════════════════════════════
+
+Copy and paste these commands one by one into your EC2 terminal:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1: Update System & Install Dependencies
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install python3 python3-pip python3-venv git -y
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2: Clone Repository
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+git clone https://github.com/imnuman/trading-tool.git
+cd trading-tool
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 3: Setup Virtual Environment
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+python3 -m venv venv
+source venv/bin/activate
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 4: Install Python Packages
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+pip install --upgrade pip
+pip install -r requirements.txt
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 5: Create secrets.env (Credentials are pre-filled)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+cat > config/secrets.env << 'ENVEOF'
+TELEGRAM_BOT_TOKEN=8425324139:AAGXmo2h3_4xTbkMW-TiASELOlWtMryN5ho
+OANDA_API_KEY=45450d8926fe5c97a7e1867062bdb12f-1d815a45c5b08c7737de801882b104c0
+OANDA_ACCOUNT_ID=101-002-37553196-001
+OANDA_ENVIRONMENT=practice
+DATABASE_PATH=./data/strategies.db
+MIN_CONFIDENCE_THRESHOLD=80
+MIN_ENSEMBLE_AGREEMENT=0.80
+MAX_DRAWDOWN_THRESHOLD=0.20
+ENVEOF
+
+chmod 600 config/secrets.env
+mkdir -p data
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 6: Run Pre-Deployment (Generates Strategies)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+source venv/bin/activate
+python3 scripts/pre_deploy.py
+
+⏱️  This takes 10-30 minutes. You can reduce strategy count in 
+   scripts/pre_deploy.py (change num_strategies=1000 to 100 for faster test)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 7: Create Systemd Service
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sudo nano /etc/systemd/system/trading-bot.service
+
+Paste this content:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[Unit]
+Description=Trading Tool Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/trading-tool
+Environment="PATH=/home/ubuntu/trading-tool/venv/bin"
+ExecStart=/home/ubuntu/trading-tool/venv/bin/python3 main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Save: Ctrl+X, then Y, then Enter
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 8: Enable and Start Bot
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sudo systemctl daemon-reload
+sudo systemctl enable trading-bot
+sudo systemctl start trading-bot
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 9: Verify Bot is Running
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sudo systemctl status trading-bot
+
+# View logs
+sudo journalctl -u trading-bot -f
+
+# Test in Telegram: Send /start to @trading_47_bot
+
+═══════════════════════════════════════════════════════════════
+✅ DONE! Your bot is now running 24/7!
+═══════════════════════════════════════════════════════════════
+
