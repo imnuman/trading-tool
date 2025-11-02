@@ -1,6 +1,7 @@
 """
 Data Fetcher Module
 Fetches historical and real-time price data for trading pairs
+Supports both yfinance (free) and OANDA (real-time) data sources
 """
 
 import pandas as pd
@@ -10,24 +11,49 @@ from typing import Dict, Optional
 import logging
 from pathlib import Path
 import pickle
+import os
 
 logger = logging.getLogger(__name__)
+
+# Try to import OANDA fetcher (optional)
+try:
+    from src.data.oanda_fetcher import OANDAFetcher
+    OANDA_AVAILABLE = True
+except ImportError:
+    OANDA_AVAILABLE = False
 
 
 class DataFetcher:
     """Fetches and manages market data"""
 
-    def __init__(self, cache_dir: str = "data/cache"):
+    def __init__(self, cache_dir: str = "data/cache", use_oanda: bool = True):
         """
         Initialize data fetcher
 
         Args:
             cache_dir: Directory to cache downloaded data
+            use_oanda: Use OANDA API if available and configured (default: True)
         """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.use_oanda = use_oanda
 
-        # Define trading pairs with their Yahoo Finance tickers
+        # Initialize OANDA fetcher if available and configured
+        self.oanda_fetcher = None
+        if use_oanda and OANDA_AVAILABLE:
+            try:
+                self.oanda_fetcher = OANDAFetcher()
+                # Test connection
+                if self.oanda_fetcher.test_connection():
+                    logger.info("✅ Using OANDA API for real-time data")
+                else:
+                    logger.warning("⚠️  OANDA configured but connection failed. Falling back to yfinance.")
+                    self.oanda_fetcher = None
+            except Exception as e:
+                logger.warning(f"⚠️  OANDA not configured or unavailable: {e}. Using yfinance.")
+                self.oanda_fetcher = None
+        
+        # Define trading pairs with their Yahoo Finance tickers (fallback)
         self.pair_mappings = {
             "USD_EURUSD": "EURUSD=X",
             "GBP_GBPUSD": "GBPUSD=X",
@@ -35,6 +61,15 @@ class DataFetcher:
             "JPY_USDJPY": "USDJPY=X",
             "AUD_AUDUSD": "AUDUSD=X",
             "CHF_USDCHF": "USDCHF=X",
+        }
+        
+        # OANDA instrument mapping
+        self.oanda_pairs = {
+            "USD_EURUSD": "EUR_USD",
+            "GBP_GBPUSD": "GBP_USD",
+            "JPY_USDJPY": "USD_JPY",
+            "AUD_AUDUSD": "AUD_USD",
+            "CHF_USDCHF": "USD_CHF",
         }
 
     def fetch_all_pairs(
@@ -155,7 +190,7 @@ class DataFetcher:
 
     def get_latest_price(self, pair_name: str) -> Optional[float]:
         """
-        Get the latest price for a trading pair
+        Get the latest price for a trading pair (uses OANDA if available)
 
         Args:
             pair_name: Trading pair name
@@ -163,6 +198,13 @@ class DataFetcher:
         Returns:
             Latest close price or None
         """
+        # Try OANDA real-time price first
+        if self.oanda_fetcher and pair_name in self.oanda_pairs:
+            price_data = self.get_realtime_price(pair_name)
+            if price_data:
+                return price_data.get('mid')  # Use mid price
+        
+        # Fallback to yfinance
         data = self.load_data(pair_name, period='1d', interval='1m')
         if data is not None and not data.empty:
             return float(data['close'].iloc[-1])
