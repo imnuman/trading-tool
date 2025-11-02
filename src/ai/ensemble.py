@@ -9,6 +9,9 @@ from typing import Dict, List, Optional, Tuple
 import logging
 from src.strategies.strategy_generator import Strategy
 from src.backtesting.backtest_engine import BacktestEngine
+from src.ai.regime_detector import RegimeDetector
+from src.ai.trend_filter import TrendFilter
+from src.data.data_fetcher import DataFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +23,9 @@ class EnsembleSignalGenerator:
         self,
         strategies: List[Strategy],
         min_agreement: float = 0.80,
-        min_confidence: float = 80.0
+        min_confidence: float = 80.0,
+        use_regime_filter: bool = True,
+        use_trend_filter: bool = True
     ):
         """
         Initialize ensemble generator
@@ -29,11 +34,20 @@ class EnsembleSignalGenerator:
             strategies: List of strategies to use in ensemble
             min_agreement: Minimum agreement threshold (0-1)
             min_confidence: Minimum confidence score to generate signal
+            use_regime_filter: Enable regime-based strategy filtering
+            use_trend_filter: Enable multi-timeframe trend filtering
         """
         self.strategies = strategies
         self.min_agreement = min_agreement
         self.min_confidence = min_confidence
         self.strategy_weights = self._calculate_weights(strategies)
+        
+        # Initialize filters
+        self.use_regime_filter = use_regime_filter
+        self.use_trend_filter = use_trend_filter
+        self.regime_detector = RegimeDetector() if use_regime_filter else None
+        self.trend_filter = TrendFilter() if use_trend_filter else None
+        self.data_fetcher = DataFetcher() if use_trend_filter else None
     
     def _calculate_weights(self, strategies: List[Strategy]) -> Dict[str, float]:
         """Calculate weights for each strategy based on performance"""
@@ -47,24 +61,79 @@ class EnsembleSignalGenerator:
         self, 
         data: pd.DataFrame, 
         current_price: float,
-        pair: str = "USD"
+        pair: str = "EURUSD"
     ) -> Optional[Dict]:
         """
-        Generate signal from ensemble
+        Generate signal from ensemble with regime and trend filtering
         
         Args:
-            data: Historical price data
+            data: Historical price data (1h timeframe)
             current_price: Current market price
             pair: Trading pair name
         
         Returns:
             Signal dictionary or None if no high-confidence signal
         """
-        # Get votes from each strategy
+        # Step 1: Detect market regime and filter strategies
+        active_strategies = self.strategies
+        
+        if self.use_regime_filter and self.regime_detector:
+            regime, regime_confidence = self.regime_detector.detect_regime(data)
+            logger.info(f"Market regime: {regime} (confidence: {regime_confidence:.2f})")
+            
+            # Filter strategies by regime compatibility
+            active_strategies = self.regime_detector.filter_strategies_by_regime(
+                self.strategies,
+                regime,
+                min_compatibility=0.6
+            )
+            
+            if not active_strategies:
+                logger.info(f"No strategies compatible with {regime} regime")
+                return None
+        
+        # Step 2: Get multi-timeframe data for trend analysis
+        data_4h = None
+        data_1d = None
+        
+        if self.use_trend_filter and self.trend_filter:
+            # Resample 1h data to 4h and daily for trend analysis
+            try:
+                if len(data) > 100:
+                    # Resample to 4h (take every 4th hour, or use OHLC resampling)
+                    data_4h = data.copy()
+                    if hasattr(data.index[0], 'hour'):
+                        # Resample hourly to 4h
+                        data_4h = data_4h.resample('4H', closed='left', label='left').agg({
+                            'open': 'first',
+                            'high': 'max',
+                            'low': 'min',
+                            'close': 'last',
+                            'volume': 'sum'
+                        }).dropna()
+                    
+                    # Resample to daily
+                    data_1d = data.copy()
+                    data_1d = data_1d.resample('D', closed='left', label='left').agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }).dropna()
+                    
+                    # Add back technical metrics for daily
+                    if 'volatility' not in data_1d.columns:
+                        data_1d['returns'] = data_1d['close'].pct_change()
+                        data_1d['volatility'] = data_1d['returns'].rolling(window=20).std()
+            except Exception as e:
+                logger.debug(f"Could not resample data for multi-timeframe: {e}")
+        
+        # Step 3: Get votes from filtered strategies
         votes = []
         strategy_signals = []
         
-        for strategy in self.strategies:
+        for strategy in active_strategies:
             signal = self._get_strategy_signal(strategy, data, current_price)
             if signal:
                 votes.append(signal['direction'])
@@ -133,8 +202,23 @@ class EnsembleSignalGenerator:
             'timestamp': pd.Timestamp.now().isoformat()
         }
         
+        # Step 4: Apply trend filter (multi-timeframe confirmation)
+        if self.use_trend_filter and self.trend_filter:
+            trend_alignment = self.trend_filter.check_multi_timeframe_trend(
+                data_1h=data,
+                data_4h=data_4h,
+                data_1d=data_1d
+            )
+            
+            # Filter signal based on trend alignment
+            signal = self.trend_filter.filter_signal_by_trend(signal, trend_alignment)
+            
+            if signal is None:
+                logger.info("Signal filtered by trend: timeframes not aligned or fighting trend")
+                return None
+        
         logger.info(
-            f"Generated {direction} signal for {pair} with {confidence:.1f}% confidence "
+            f"Generated {direction} signal for {pair} with {signal['confidence']:.1f}% confidence "
             f"({agreement*100:.1f}% agreement from {len(strategies_used)} strategies)"
         )
         
