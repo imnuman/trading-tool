@@ -14,6 +14,7 @@ from src.telegram.bot import TradingBot
 from src.ai.ensemble import EnsembleSignalGenerator
 from src.strategies.strategy_generator import Strategy
 from src.utils.database import StrategyDatabase
+from src.utils.learning_loop import LearningLoop
 
 # Load environment variables
 load_dotenv('config/secrets.env')
@@ -88,8 +89,21 @@ async def main():
     bot = TradingBot(bot_token)
     bot.set_ensemble(ensemble)
     
+    # Initialize learning loop (optional - runs in background)
+    learning_loop = LearningLoop(ensemble, db, update_interval=300)  # Update every 5 minutes
+    
     logger.info("✅ Bot initialized and ready!")
-    await bot.start()
+    logger.info("📊 Learning loop will update strategies every 5 minutes")
+    
+    # Start learning loop in background
+    import asyncio
+    learning_task = asyncio.create_task(learning_loop.start())
+    
+    try:
+        await bot.start()
+    finally:
+        learning_loop.stop()
+        learning_task.cancel()
 
 
 if __name__ == "__main__":
