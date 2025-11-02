@@ -13,6 +13,10 @@ ENV/
 .env
 config/secrets.env
 
+# AWS credentials (if stored locally)
+.aws/
+aws-credentials.txt
+
 # Data files (exclude root data directory but not src/data)
 /data/
 *.db
