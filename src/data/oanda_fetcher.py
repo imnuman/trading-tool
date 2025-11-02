@@ -41,8 +41,20 @@ class OANDAFetcher:
         self.account_id = account_id or os.getenv('OANDA_ACCOUNT_ID')
         self.environment = environment or os.getenv('OANDA_ENVIRONMENT', 'practice')
         
-        if not self.api_key:
-            raise ValueError("OANDA_API_KEY not found. Set it in config/secrets.env or pass as parameter.")
+        # Validate API key
+        if not self.api_key or self.api_key.lower() in ['optional', 'your_token_here', '']:
+            raise ValueError(
+                "OANDA_API_KEY not found or invalid. "
+                "Please set it in config/secrets.env with your actual OANDA API token."
+            )
+        
+        # Validate Account ID
+        if not self.account_id or self.account_id.lower() in ['optional', 'your_account_id_here', '']:
+            raise ValueError(
+                "OANDA_ACCOUNT_ID not found or invalid. "
+                "Please set it in config/secrets.env with your actual OANDA Account ID. "
+                "You can find it in the OANDA platform (top-right corner) or by calling the accounts endpoint."
+            )
         
         # Set API endpoints based on environment
         if self.environment == 'live':
@@ -110,6 +122,13 @@ class OANDAFetcher:
             response = requests.get(url, headers=self.headers)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 400:
+                logger.error(f"Bad Request (400). Check that Account ID '{self.account_id}' is correct.")
+                logger.error("Get your Account ID from OANDA platform (top-right corner) or accounts endpoint.")
+            else:
+                logger.error(f"HTTP Error {e.response.status_code}: {e}")
+            return {}
         except Exception as e:
             logger.error(f"Error fetching account info: {e}")
             return {}

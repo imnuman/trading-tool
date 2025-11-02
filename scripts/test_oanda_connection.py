@@ -64,10 +64,17 @@ def main():
         
     except ValueError as e:
         logger.error(f"❌ Configuration error: {e}")
-        logger.error("\nPlease check:")
-        logger.error("1. OANDA_API_KEY is set in config/secrets.env")
-        logger.error("2. OANDA_ACCOUNT_ID is set in config/secrets.env")
-        logger.error("3. OANDA_ENVIRONMENT is set (practice or live)")
+        logger.error("\n📝 Setup Instructions:")
+        logger.error("1. Follow OANDA_SETUP.md to create an account and get API token")
+        logger.error("2. Edit config/secrets.env and add your credentials:")
+        logger.error("   OANDA_API_KEY=your_actual_token_here")
+        logger.error("   OANDA_ACCOUNT_ID=your_actual_account_id_here")
+        logger.error("   OANDA_ENVIRONMENT=practice")
+        logger.error("\n💡 Quick Steps:")
+        logger.error("   - Go to: https://www.oanda.com/us-en/trade/open-an-account/")
+        logger.error("   - Create a Practice Account (free)")
+        logger.error("   - Generate API token from Settings → API")
+        logger.error("   - Copy Account ID from platform (top-right corner)")
         return False
     except Exception as e:
         logger.error(f"❌ Error: {e}")
