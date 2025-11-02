@@ -7,10 +7,26 @@ echo ""
 
 # Check secrets
 if [ -f config/secrets.env ]; then
-    if grep -qE "(your_token|optional|your_)" config/secrets.env 2>/dev/null; then
-        echo "❌ Secrets: Contains placeholder values"
+    # More sophisticated check - verify actual values exist
+    telegram=$(grep "^TELEGRAM_BOT_TOKEN=" config/secrets.env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    oanda_key=$(grep "^OANDA_API_KEY=" config/secrets.env 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    
+    if [ -z "$telegram" ] || echo "$telegram" | grep -qiE "(your_token|optional|your_|token_here)"; then
+        echo "❌ Telegram Token: Not configured"
+    elif [ ${#telegram} -lt 20 ]; then
+        echo "⚠️  Telegram Token: Too short (may be invalid)"
     else
-        echo "✅ Secrets: Configured"
+        echo "✅ Telegram Token: Configured (${#telegram} chars)"
+    fi
+    
+    if [ -n "$oanda_key" ] && ! echo "$oanda_key" | grep -qiE "(your_|optional|token_here)"; then
+        if [ ${#oanda_key} -gt 40 ]; then
+            echo "✅ OANDA API Key: Configured (${#oanda_key} chars)"
+        else
+            echo "⚠️  OANDA API Key: May be invalid (too short)"
+        fi
+    else
+        echo "⚠️  OANDA API Key: Not configured (optional)"
     fi
 else
     echo "❌ Secrets: File missing (copy from secrets.env.example)"
@@ -35,19 +51,40 @@ else
     echo "⚠️  Git: Uncommitted changes"
 fi
 
-# Check OANDA (optional)
-if grep -q "OANDA_API_KEY" config/secrets.env 2>/dev/null && ! grep -qE "(optional|your_)" config/secrets.env 2>/dev/null; then
-    echo "✅ OANDA: Configured"
-else
-    echo "⚠️  OANDA: Not configured (optional, will use yfinance)"
-fi
+# Test connections
+echo ""
+echo "🔌 Connection Tests:"
+python3 -c "
+from telegram import Bot
+from dotenv import load_dotenv
+import os
+import asyncio
 
-# Check Telegram
-if grep -q "TELEGRAM_BOT_TOKEN" config/secrets.env 2>/dev/null && ! grep -qE "(your_token|optional)" config/secrets.env 2>/dev/null; then
-    echo "✅ Telegram: Configured"
-else
-    echo "❌ Telegram: Not configured"
-fi
+load_dotenv('config/secrets.env')
+token = os.getenv('TELEGRAM_BOT_TOKEN')
+
+if token and len(token) > 20:
+    try:
+        bot = Bot(token)
+        info = asyncio.run(bot.get_me())
+        print('✅ Telegram: Connected (@' + info.username + ')')
+    except:
+        print('❌ Telegram: Connection failed')
+else:
+    print('❌ Telegram: Token missing or invalid')
+" 2>/dev/null || echo "⚠️  Telegram: Could not test"
+
+python3 -c "
+from src.data.oanda_fetcher import OANDAFetcher
+try:
+    fetcher = OANDAFetcher()
+    if fetcher.test_connection():
+        print('✅ OANDA: Connected')
+    else:
+        print('⚠️  OANDA: Connection failed (optional)')
+except:
+    print('⚠️  OANDA: Not configured (optional)')
+" 2>/dev/null || echo "⚠️  OANDA: Not configured (optional)"
 
 echo ""
 echo "📝 Next Steps:"
