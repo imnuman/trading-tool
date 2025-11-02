@@ -27,14 +27,25 @@ class DataFetcher:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Define trading pairs with their Yahoo Finance tickers
+        # Define trading pairs in standard format with their Yahoo Finance tickers
+        # Format: "EUR/USD" -> Yahoo Finance ticker
         self.pair_mappings = {
-            "USD_EURUSD": "EURUSD=X",
-            "GBP_GBPUSD": "GBPUSD=X",
-            "Gold_XAUUSD": "GC=F",  # Gold futures
-            "JPY_USDJPY": "USDJPY=X",
-            "AUD_AUDUSD": "AUDUSD=X",
-            "CHF_USDCHF": "USDCHF=X",
+            "EUR/USD": "EURUSD=X",
+            "GBP/USD": "GBPUSD=X",
+            "XAU/USD": "GC=F",  # Gold futures
+            "USD/JPY": "USDJPY=X",
+            "AUD/USD": "AUDUSD=X",
+            "USD/CHF": "USDCHF=X",
+        }
+
+        # Backward compatibility mapping (old format -> new format)
+        self.legacy_mappings = {
+            "USD_EURUSD": "EUR/USD",
+            "GBP_GBPUSD": "GBP/USD",
+            "Gold_XAUUSD": "XAU/USD",
+            "JPY_USDJPY": "USD/JPY",
+            "AUD_AUDUSD": "AUD/USD",
+            "CHF_USDCHF": "USD/CHF",
         }
 
     def fetch_all_pairs(
@@ -111,15 +122,20 @@ class DataFetcher:
         Load data for a specific pair
 
         Args:
-            pair_name: Trading pair name (e.g., "USD_EURUSD")
+            pair_name: Trading pair name (e.g., "EUR/USD" or legacy "USD_EURUSD")
             period: Time period to fetch
             interval: Data interval
 
         Returns:
             DataFrame with OHLCV data or None if fetch fails
         """
+        # Handle legacy format for backward compatibility
+        if pair_name in self.legacy_mappings:
+            pair_name = self.legacy_mappings[pair_name]
+            logger.debug(f"Converted legacy pair format to: {pair_name}")
+
         if pair_name not in self.pair_mappings:
-            logger.error(f"Unknown pair: {pair_name}")
+            logger.error(f"Unknown pair: {pair_name}. Available pairs: {list(self.pair_mappings.keys())}")
             return None
 
         ticker = self.pair_mappings[pair_name]
@@ -167,6 +183,15 @@ class DataFetcher:
         if data is not None and not data.empty:
             return float(data['close'].iloc[-1])
         return None
+
+    def get_available_pairs(self) -> list:
+        """
+        Get list of available trading pairs
+
+        Returns:
+            List of pair names in standard format (e.g., ["EUR/USD", "GBP/USD"])
+        """
+        return list(self.pair_mappings.keys())
 
     def _add_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """
