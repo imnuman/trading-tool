@@ -13,8 +13,8 @@ ENV/
 .env
 config/secrets.env
 
-# Data files
-data/
+# Data files (exclude root data directory but not src/data)
+/data/
 *.db
 *.sqlite
 *.csv
