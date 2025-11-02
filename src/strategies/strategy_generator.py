@@ -135,8 +135,8 @@ class StrategyGenerator:
             },
             exit_conditions={
                 'opposite_cross': True,
-                'stop_loss_pct': np.random.uniform(0.01, 0.03),
-                'take_profit_pct': np.random.uniform(0.02, 0.06)
+                'stop_loss_pct': np.random.uniform(0.0015, 0.003),  # 15-30 pips for EURUSD
+                'take_profit_pct': np.random.uniform(0.003, 0.006)  # 30-60 pips
             },
             parameters={
                 'fast_ema': fast_period,
@@ -165,8 +165,8 @@ class StrategyGenerator:
             },
             exit_conditions={
                 'rsi_extreme': True,
-                'stop_loss_pct': np.random.uniform(0.01, 0.03),
-                'take_profit_pct': np.random.uniform(0.02, 0.05)
+                'stop_loss_pct': np.random.uniform(0.0015, 0.003),  # 15-30 pips
+                'take_profit_pct': np.random.uniform(0.003, 0.006)  # 30-60 pips
             },
             parameters={
                 'rsi_period': rsi_period,
@@ -195,8 +195,8 @@ class StrategyGenerator:
             },
             exit_conditions={
                 'opposite_signal': True,
-                'stop_loss_pct': np.random.uniform(0.01, 0.03),
-                'take_profit_pct': np.random.uniform(0.02, 0.06)
+                'stop_loss_pct': np.random.uniform(0.0015, 0.003),  # 15-30 pips for EURUSD
+                'take_profit_pct': np.random.uniform(0.003, 0.006)  # 30-60 pips
             },
             parameters={
                 'macd_fast': fast,
@@ -225,8 +225,8 @@ class StrategyGenerator:
             exit_conditions={
                 'touch_upper_band': True,
                 'middle_band_cross': np.random.choice([True, False]),
-                'stop_loss_pct': np.random.uniform(0.01, 0.03),
-                'take_profit_pct': np.random.uniform(0.02, 0.06)
+                'stop_loss_pct': np.random.uniform(0.0015, 0.003),  # 15-30 pips for EURUSD
+                'take_profit_pct': np.random.uniform(0.003, 0.006)  # 30-60 pips
             },
             parameters={
                 'bb_period': period,
@@ -250,8 +250,8 @@ class StrategyGenerator:
             },
             exit_conditions={
                 'cloud_below': True,
-                'stop_loss_pct': np.random.uniform(0.01, 0.03),
-                'take_profit_pct': np.random.uniform(0.02, 0.05)
+                'stop_loss_pct': np.random.uniform(0.0015, 0.003),  # 15-30 pips
+                'take_profit_pct': np.random.uniform(0.003, 0.006)  # 30-60 pips
             },
             parameters={
                 'risk_reward_ratio': np.random.uniform(1.5, 2.5)
@@ -275,7 +275,7 @@ class StrategyGenerator:
             },
             exit_conditions={
                 'break_sr': True,
-                'stop_loss_pct': np.random.uniform(0.01, 0.04),
+                'stop_loss_pct': np.random.uniform(0.0015, 0.004),  # 15-40 pips
                 'take_profit_pct': np.random.uniform(0.02, 0.06)
             },
             parameters={
@@ -302,8 +302,8 @@ class StrategyGenerator:
             },
             exit_conditions={
                 'volume_normalize': True,
-                'stop_loss_pct': np.random.uniform(0.01, 0.03),
-                'take_profit_pct': np.random.uniform(0.02, 0.06)
+                'stop_loss_pct': np.random.uniform(0.0015, 0.003),  # 15-30 pips for EURUSD
+                'take_profit_pct': np.random.uniform(0.003, 0.006)  # 30-60 pips
             },
             parameters={
                 'volume_period': volume_period,
@@ -368,8 +368,8 @@ class StrategyGenerator:
             },
             exit_conditions={
                 'any_indicator_reverse': True,
-                'stop_loss_pct': np.random.uniform(0.01, 0.03),
-                'take_profit_pct': np.random.uniform(0.02, 0.06)
+                'stop_loss_pct': np.random.uniform(0.0015, 0.003),  # 15-30 pips for EURUSD
+                'take_profit_pct': np.random.uniform(0.003, 0.006)  # 30-60 pips
             },
             parameters={
                 'indicators': list(selected),

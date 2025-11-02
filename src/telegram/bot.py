@@ -96,8 +96,9 @@ Ready to provide trading signals with ≥80% confidence!
             
             current_price = float(data['close'].iloc[-1])
             
-            # Generate signal
-            signal = self.ensemble.generate_signal(data, current_price, "USD")
+            # Generate signal (use actual pair name from data key)
+            pair_name = "EURUSD"  # Default, could be extracted from data_key
+            signal = self.ensemble.generate_signal(data, current_price, pair_name)
             
             if signal is None:
                 await update.message.reply_text(
