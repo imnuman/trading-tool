@@ -153,6 +153,19 @@ Ready to provide trading signals with ≥80% confidence!
         direction_emoji = "📈" if signal['direction'] == 'buy' else "📉"
         confidence_emoji = "🟢" if signal['confidence'] >= 85 else "🟡" if signal['confidence'] >= 80 else "🟠"
         
+        # Build additional info
+        additional_info = []
+        
+        if signal.get('trend_aligned'):
+            trend_info = signal.get('trend_info', {})
+            additional_info.append(f"✓ Trend: {trend_info.get('alignment', 'N/A').upper()}")
+            additional_info.append(f"✓ Timeframes: {trend_info.get('agreement', 'N/A')}")
+        
+        if signal.get('correlation_check', {}).get('passed'):
+            additional_info.append("✓ Correlation check passed")
+        
+        additional_text = "\n".join(additional_info) if additional_info else "✓ All filters passed"
+        
         message = f"""
 {confidence_emoji} *Trading Signal*
 
@@ -166,10 +179,14 @@ Ready to provide trading signals with ≥80% confidence!
 
 *Ensemble Agreement:* {signal['agreement']*100:.1f}%
 *Strategies Used:* {len(signal['strategies_used'])}
+
+*Risk Checks:*
+{additional_text}
+
 *Time:* {signal['timestamp']}
 
 ⚠️ *For Human Execution Only*
-This signal is ready for you to execute manually.
+This signal passed all filters and is ready for you to execute manually.
         """
         return message
     
