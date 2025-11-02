@@ -15,6 +15,7 @@ import pandas as pd
 from src.ai.ensemble import EnsembleSignalGenerator
 from src.utils.database import StrategyDatabase
 from src.data.data_fetcher import DataFetcher
+from src.risk.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,12 @@ class TradingBot:
         self.application.add_handler(CommandHandler("stats", self.stats_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("start", self.start_command))
+        
+        # Initialize risk manager with news and correlation filters
+        self.risk_manager = RiskManager(
+            use_news_filter=True,
+            use_correlation_filter=True
+        )
     
     async def start(self):
         """Start the bot"""
@@ -104,7 +111,28 @@ Ready to provide trading signals with ≥80% confidence!
                 await update.message.reply_text(
                     "❌ *No Trade*\n\n"
                     "Current market conditions do not meet the ≥80% confidence threshold. "
-                    "The ensemble did not reach consensus for a high-probability trade.",
+                    "Possible reasons:\n"
+                    "• Strategies didn't reach consensus\n"
+                    "• Market regime not suitable\n"
+                    "• Timeframes not aligned\n"
+                    "• Low confidence from ensemble",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Apply risk filters (news calendar, correlation)
+            # Get existing positions from database (for correlation check)
+            existing_positions = []  # TODO: Load from database when tracking implemented
+            is_safe, reason = self.risk_manager.check_signal_safety(
+                signal, data, existing_positions
+            )
+            
+            if not is_safe:
+                await update.message.reply_text(
+                    f"❌ *No Trade - Risk Filter*\n\n"
+                    f"Signal filtered by risk management:\n"
+                    f"⚠️ {reason}\n\n"
+                    f"Recommendation: Wait until conditions improve.",
                     parse_mode='Markdown'
                 )
                 return

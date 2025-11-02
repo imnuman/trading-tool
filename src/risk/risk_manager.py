@@ -5,8 +5,11 @@ Volatility checks, liquidity filters, dynamic TP/SL adjustment
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, List
 import logging
+from datetime import datetime
+from src.data.economic_calendar import EconomicCalendar
+from src.risk.correlation_manager import CorrelationManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,9 @@ class RiskManager:
         max_volatility_percentile: float = 0.95,
         min_liquidity_hours: list = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
         slippage_adjustment: float = 0.0002,
-        spread_adjustment: float = 0.0001
+        spread_adjustment: float = 0.0001,
+        use_news_filter: bool = True,
+        use_correlation_filter: bool = True
     ):
         """
         Initialize risk manager
@@ -29,19 +34,33 @@ class RiskManager:
             min_liquidity_hours: Hours with acceptable liquidity
             slippage_adjustment: Slippage percentage to add to TP/SL
             spread_adjustment: Spread to add to TP/SL
+            use_news_filter: Enable economic calendar filtering
+            use_correlation_filter: Enable correlation management
         """
         self.max_volatility_percentile = max_volatility_percentile
         self.min_liquidity_hours = min_liquidity_hours
         self.slippage_adjustment = slippage_adjustment
         self.spread_adjustment = spread_adjustment
+        
+        # Initialize filters
+        self.use_news_filter = use_news_filter
+        self.use_correlation_filter = use_correlation_filter
+        self.economic_calendar = EconomicCalendar() if use_news_filter else None
+        self.correlation_manager = CorrelationManager() if use_correlation_filter else None
     
-    def check_signal_safety(self, signal: Dict, data: pd.DataFrame) -> tuple[bool, Optional[str]]:
+    def check_signal_safety(
+        self, 
+        signal: Dict, 
+        data: pd.DataFrame,
+        existing_positions: Optional[List[Dict]] = None
+    ) -> Tuple[bool, Optional[str]]:
         """
         Check if signal is safe to execute
         
         Args:
             signal: Signal dictionary
             data: Historical price data
+            existing_positions: List of existing positions for correlation check
         
         Returns:
             Tuple of (is_safe, reason_if_not_safe)
@@ -57,6 +76,22 @@ class RiskManager:
         # Check if price levels are realistic
         if not self._check_price_levels(signal, data):
             return False, "Price levels outside acceptable range"
+        
+        # Check economic calendar (news filter)
+        if self.use_news_filter and self.economic_calendar:
+            is_allowed, reason = self.economic_calendar.is_trading_allowed()
+            if not is_allowed:
+                return False, reason
+        
+        # Check correlation with existing positions
+        if self.use_correlation_filter and self.correlation_manager:
+            conflict = self.correlation_manager.check_correlation_conflict(
+                signal.get('pair', ''),
+                signal.get('direction', ''),
+                existing_positions or []
+            )
+            if conflict['has_conflict']:
+                return False, conflict['reason']
         
         return True, None
     
