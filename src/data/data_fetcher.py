@@ -106,7 +106,9 @@ class DataFetcher:
                 logger.info(f"Fetching {pair_name} ({ticker})...")
 
                 # Check cache first
-                cache_file = self.cache_dir / f"{pair_name}_{period}_{interval}.pkl"
+                # Replace / with - for filename safety
+                safe_pair_name = pair_name.replace("/", "-")
+                cache_file = self.cache_dir / f"{safe_pair_name}_{period}_{interval}.pkl"
                 if cache_file.exists():
                     logger.info(f"Loading {pair_name} from cache")
                     with open(cache_file, 'rb') as f:
