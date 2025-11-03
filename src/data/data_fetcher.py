@@ -115,8 +115,18 @@ class DataFetcher:
                         logger.warning(f"No data received for {pair_name}")
                         continue
 
-                    # Ensure column names are lowercase
-                    data.columns = [col.lower() for col in data.columns]
+                    # Handle MultiIndex columns (yfinance sometimes returns tuples)
+                    if isinstance(data.columns, pd.MultiIndex):
+                        # Flatten MultiIndex: take the first level (usually the column name)
+                        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+                    
+                    # Ensure column names are lowercase (handle both strings and tuples)
+                    def normalize_col(col):
+                        if isinstance(col, tuple):
+                            return str(col[0]).lower() if len(col) > 0 else str(col).lower()
+                        return str(col).lower()
+                    
+                    data.columns = [normalize_col(col) for col in data.columns]
 
                     # Add calculated indicators
                     data = self._add_indicators(data)
@@ -218,8 +228,18 @@ class DataFetcher:
                 logger.warning(f"No data received for {pair_name}")
                 return None
 
-            # Ensure column names are lowercase
-            data.columns = [col.lower() for col in data.columns]
+            # Handle MultiIndex columns (yfinance sometimes returns tuples)
+            if isinstance(data.columns, pd.MultiIndex):
+                # Flatten MultiIndex: take the first level (usually the column name)
+                data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+            
+            # Ensure column names are lowercase (handle both strings and tuples)
+            def normalize_col(col):
+                if isinstance(col, tuple):
+                    return str(col[0]).lower() if len(col) > 0 else str(col).lower()
+                return str(col).lower()
+            
+            data.columns = [normalize_col(col) for col in data.columns]
 
             # Add calculated indicators
             data = self._add_indicators(data)
