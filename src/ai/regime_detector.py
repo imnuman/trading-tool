@@ -65,7 +65,11 @@ class RegimeDetector:
         returns = recent['close'].pct_change()
         current_volatility = returns.tail(20).std()
         volatility_history = returns.rolling(window=50).std()
-        volatility_percentile = np.percentile(volatility_history.dropna(), 75)
+        volatility_dropped = volatility_history.dropna()
+        if len(volatility_dropped) == 0:
+            # Not enough data for regime detection
+            return 'ranging', 0.5
+        volatility_percentile = np.percentile(volatility_dropped, 75)
         
         # Detect regime
         if current_volatility > volatility_percentile * 1.5:

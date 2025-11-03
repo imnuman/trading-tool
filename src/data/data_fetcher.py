@@ -1,6 +1,7 @@
 """
 Data Fetcher Module
 Fetches historical and real-time price data for trading pairs
+Supports both yfinance (free) and OANDA (real-time) data sources
 """
 
 import pandas as pd
@@ -10,25 +11,49 @@ from typing import Dict, Optional
 import logging
 from pathlib import Path
 import pickle
+import os
 
 logger = logging.getLogger(__name__)
+
+# Try to import OANDA fetcher (optional)
+try:
+    from src.data.oanda_fetcher import OANDAFetcher
+    OANDA_AVAILABLE = True
+except ImportError:
+    OANDA_AVAILABLE = False
 
 
 class DataFetcher:
     """Fetches and manages market data"""
 
-    def __init__(self, cache_dir: str = "data/cache"):
+    def __init__(self, cache_dir: str = "data/cache", use_oanda: bool = True):
         """
         Initialize data fetcher
 
         Args:
             cache_dir: Directory to cache downloaded data
+            use_oanda: Use OANDA API if available and configured (default: True)
         """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.use_oanda = use_oanda
 
-        # Define trading pairs in standard format with their Yahoo Finance tickers
-        # Format: "EUR/USD" -> Yahoo Finance ticker
+        # Initialize OANDA fetcher if available and configured
+        self.oanda_fetcher = None
+        if use_oanda and OANDA_AVAILABLE:
+            try:
+                self.oanda_fetcher = OANDAFetcher()
+                # Test connection
+                if self.oanda_fetcher.test_connection():
+                    logger.info("✅ Using OANDA API for real-time data")
+                else:
+                    logger.warning("⚠️  OANDA configured but connection failed. Falling back to yfinance.")
+                    self.oanda_fetcher = None
+            except Exception as e:
+                logger.warning(f"⚠️  OANDA not configured or unavailable: {e}. Using yfinance.")
+                self.oanda_fetcher = None
+
+        # Define trading pairs in standard format (EUR/USD) with their Yahoo Finance tickers (fallback)
         self.pair_mappings = {
             "EUR/USD": "EURUSD=X",
             "GBP/USD": "GBPUSD=X",
@@ -46,6 +71,15 @@ class DataFetcher:
             "JPY_USDJPY": "USD/JPY",
             "AUD_AUDUSD": "AUD/USD",
             "CHF_USDCHF": "USD/CHF",
+        }
+        
+        # OANDA instrument mapping
+        self.oanda_pairs = {
+            "USD_EURUSD": "EUR_USD",
+            "GBP_GBPUSD": "GBP_USD",
+            "JPY_USDJPY": "USD_JPY",
+            "AUD_AUDUSD": "AUD_USD",
+            "CHF_USDCHF": "USD_CHF",
         }
 
     def fetch_all_pairs(
@@ -91,8 +125,18 @@ class DataFetcher:
                         logger.warning(f"No data received for {pair_name}")
                         continue
 
-                    # Ensure column names are lowercase
-                    data.columns = [col.lower() for col in data.columns]
+                    # Handle MultiIndex columns (yfinance sometimes returns tuples)
+                    if isinstance(data.columns, pd.MultiIndex):
+                        # Flatten MultiIndex: take the first level (usually the column name)
+                        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+                    
+                    # Ensure column names are lowercase (handle both strings and tuples)
+                    def normalize_col(col):
+                        if isinstance(col, tuple):
+                            return str(col[0]).lower() if len(col) > 0 else str(col).lower()
+                        return str(col).lower()
+                    
+                    data.columns = [normalize_col(col) for col in data.columns]
 
                     # Add calculated indicators
                     data = self._add_indicators(data)
@@ -112,11 +156,27 @@ class DataFetcher:
         logger.info(f"Successfully fetched data for {len(all_data)}/{len(self.pair_mappings)} pairs")
         return all_data
 
+    def get_realtime_price(self, pair_name: str) -> Optional[Dict]:
+        """
+        Get real-time price using OANDA (if available)
+        
+        Args:
+            pair_name: Trading pair name
+        
+        Returns:
+            Dictionary with bid/ask/mid prices or None
+        """
+        if self.oanda_fetcher and pair_name in self.oanda_pairs:
+            oanda_pair = self.oanda_pairs[pair_name]
+            return self.oanda_fetcher.get_current_price(oanda_pair)
+        return None
+    
     def load_data(
         self,
         pair_name: str,
         period: str = '60d',
-        interval: str = '1h'
+        interval: str = '1h',
+        use_oanda: Optional[bool] = None
     ) -> Optional[pd.DataFrame]:
         """
         Load data for a specific pair
@@ -140,8 +200,35 @@ class DataFetcher:
 
         ticker = self.pair_mappings[pair_name]
 
+        # Try OANDA first if available and pair is supported
+        if (use_oanda is not False) and self.oanda_fetcher and pair_name in self.oanda_pairs:
+            try:
+                # Convert interval to OANDA granularity
+                granularity_map = {
+                    '1m': 'M1', '5m': 'M5', '15m': 'M15', '30m': 'M30',
+                    '1h': 'H1', '4h': 'H4', '1d': 'D', '1w': 'W'
+                }
+                granularity = granularity_map.get(interval, 'H1')
+                
+                # Convert period to count (rough estimate)
+                count = 500  # OANDA max is 5000, use 500 for reasonable response time
+                
+                logger.info(f"Loading {pair_name} from OANDA - {period} @ {interval}")
+                data = self.oanda_fetcher.get_historical_data(
+                    pair_name,
+                    count=count,
+                    granularity=granularity
+                )
+                
+                if data is not None and not data.empty:
+                    logger.info(f"✅ Loaded {len(data)} rows from OANDA")
+                    return data
+            except Exception as e:
+                logger.warning(f"OANDA fetch failed for {pair_name}: {e}. Falling back to yfinance.")
+
+        # Fallback to yfinance
         try:
-            logger.info(f"Loading {pair_name} ({ticker}) - {period} @ {interval}")
+            logger.info(f"Loading {pair_name} ({ticker}) from yfinance - {period} @ {interval}")
 
             # Fetch from yfinance
             data = yf.download(
@@ -156,8 +243,18 @@ class DataFetcher:
                 logger.warning(f"No data received for {pair_name}")
                 return None
 
-            # Ensure column names are lowercase
-            data.columns = [col.lower() for col in data.columns]
+            # Handle MultiIndex columns (yfinance sometimes returns tuples)
+            if isinstance(data.columns, pd.MultiIndex):
+                # Flatten MultiIndex: take the first level (usually the column name)
+                data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
+            
+            # Ensure column names are lowercase (handle both strings and tuples)
+            def normalize_col(col):
+                if isinstance(col, tuple):
+                    return str(col[0]).lower() if len(col) > 0 else str(col).lower()
+                return str(col).lower()
+            
+            data.columns = [normalize_col(col) for col in data.columns]
 
             # Add calculated indicators
             data = self._add_indicators(data)
@@ -171,7 +268,7 @@ class DataFetcher:
 
     def get_latest_price(self, pair_name: str) -> Optional[float]:
         """
-        Get the latest price for a trading pair
+        Get the latest price for a trading pair (uses OANDA if available)
 
         Args:
             pair_name: Trading pair name
@@ -179,6 +276,13 @@ class DataFetcher:
         Returns:
             Latest close price or None
         """
+        # Try OANDA real-time price first
+        if self.oanda_fetcher and pair_name in self.oanda_pairs:
+            price_data = self.get_realtime_price(pair_name)
+            if price_data:
+                return price_data.get('mid')  # Use mid price
+        
+        # Fallback to yfinance
         data = self.load_data(pair_name, period='1d', interval='1m')
         if data is not None and not data.empty:
             return float(data['close'].iloc[-1])

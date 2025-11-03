@@ -88,26 +88,30 @@ async def main():
     # Initialize and start bot
     bot = TradingBot(bot_token)
     bot.set_ensemble(ensemble)
-
+    
     # Initialize learning loop (optional - runs in background)
     learning_loop = LearningLoop(
         ensemble=ensemble,
         db=db,
-        update_interval=3600  # Update every hour
+        update_interval=300  # Update every 5 minutes (configurable)
     )
-
+    
+    logger.info("✅ Bot initialized and ready!")
+    logger.info("📊 Learning loop will update strategies every 5 minutes")
+    
     # Start learning loop in background
     learning_task = asyncio.create_task(learning_loop.start())
-    logger.info("✅ Learning loop started in background")
-
-    logger.info("✅ Bot initialized and ready!")
-
+    
     try:
         await bot.start()
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         learning_loop.stop()
-        await learning_task
+        learning_task.cancel()
+        try:
+            await learning_task
+        except asyncio.CancelledError:
+            pass
 
 
 if __name__ == "__main__":
