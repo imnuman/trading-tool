@@ -1,400 +1,543 @@
-# AWS Deployment Guide
+# AWS Deployment Guide - Trading Tool
 
-Complete guide for deploying the Trading Tool to AWS.
+**Complete guide for deploying your 24/7 AI-powered trading bot on AWS**
+
+---
+
+## Table of Contents
+
+1. [Architecture Overview](#architecture-overview)
+2. [Prerequisites](#prerequisites)
+3. [Deployment Options](#deployment-options)
+4. [Option 1: AWS EC2 (Recommended)](#option-1-aws-ec2-recommended)
+5. [Option 2: AWS ECS with Fargate](#option-2-aws-ecs-with-fargate)
+6. [Option 3: AWS Lambda (Not Recommended)](#option-3-aws-lambda-not-recommended)
+7. [Configuration](#configuration)
+8. [Monitoring & Logging](#monitoring--logging)
+9. [Cost Estimation](#cost-estimation)
+10. [Troubleshooting](#troubleshooting)
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                          AWS Cloud                               │
+│                                                                   │
+│  ┌─────────────────┐     ┌──────────────┐     ┌──────────────┐ │
+│  │   EC2 Instance  │────▶│  CloudWatch  │────▶│   SNS/Email  │ │
+│  │                 │     │   Logs &     │     │    Alerts    │ │
+│  │  Trading Bot    │     │   Metrics    │     └──────────────┘ │
+│  │  (Docker/systemd)│     └──────────────┘                      │
+│  └────────┬────────┘                                            │
+│           │                                                      │
+│           ▼                                                      │
+│  ┌──────────────────┐                                          │
+│  │   EBS Volume     │                                          │
+│  │  (Database &     │                                          │
+│  │   Logs Storage)  │                                          │
+│  └──────────────────┘                                          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+  ┌─────────────┐
+  │  Telegram   │
+  │     API     │
+  └─────────────┘
+```
 
 ---
 
 ## Prerequisites
 
-- ✅ AWS Account (you mentioned you have one)
-- ✅ OANDA API credentials (see `OANDA_SETUP.md`)
-- ✅ Telegram Bot Token
-- ✅ Code pushed to GitHub
+### 1. AWS Account
+- Create an AWS account: https://aws.amazon.com/free
+- Set up billing alerts
+- Enable MFA for security
+
+### 2. AWS CLI
+```bash
+# Install AWS CLI
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# Configure AWS CLI
+aws configure
+# Enter: AWS Access Key ID
+# Enter: AWS Secret Access Key
+# Enter: Default region (e.g., us-east-1)
+# Enter: Default output format (json)
+```
+
+### 3. Telegram Bot Token
+```bash
+# Get your bot token from @BotFather on Telegram
+# Get your user ID from @userinfobot
+```
+
+### 4. Local Testing Complete
+```bash
+# Ensure bot works locally before deploying
+python3 scripts/pre_deploy.py  # Generate strategies
+python3 main.py                 # Test bot
+```
 
 ---
 
-## Option 1: AWS EC2 (Recommended for Full Control)
+## Deployment Options
+
+| Option | Best For | Cost/Month | Complexity | Uptime |
+|--------|---------|-----------|------------|--------|
+| **EC2 t3.small** | Production | ~$15-20 | Low | 99.9% |
+| **ECS Fargate** | Auto-scaling | ~$20-30 | Medium | 99.95% |
+| **Lambda** | Low-traffic | ~$5-10 | High | 99.95% |
+
+---
+
+## Option 1: AWS EC2 (Recommended)
 
 ### Step 1: Launch EC2 Instance
 
-1. **Go to AWS Console:**
-   - Navigate to: https://console.aws.amazon.com/ec2/
-   - Click "Launch Instance"
-
-2. **Configure Instance:**
-   - **Name:** trading-tool-bot
-   - **AMI:** Ubuntu 22.04 LTS (free tier eligible)
-   - **Instance Type:** `t2.micro` (free tier) or `t3.micro` (~$7/month)
-   - **Key Pair:** Create new or use existing (save the `.pem` file!)
-
-3. **Network Settings:**
-   - Allow SSH (port 22) from your IP
-   - Security Group: `default` or create new one
-
-4. **Storage:**
-   - 8 GB is enough (free tier: 30 GB)
-   - **Volume Type:** gp3
-
-5. **Review and Launch:**
-   - Click "Launch Instance"
-
-### Step 2: Connect to EC2 Instance
-
 ```bash
-# On your local machine
-chmod 400 your-key.pem
-ssh -i your-key.pem ubuntu@<YOUR_EC2_IP>
+# Create key pair for SSH
+aws ec2 create-key-pair \
+  --key-name trading-bot-key \
+  --query 'KeyMaterial' \
+  --output text > trading-bot-key.pem
+
+chmod 400 trading-bot-key.pem
+
+# Create security group
+aws ec2 create-security-group \
+  --group-name trading-bot-sg \
+  --description "Security group for trading bot"
+
+# Allow SSH (from your IP only)
+MY_IP=$(curl -s https://checkip.amazonaws.com)
+aws ec2 authorize-security-group-ingress \
+  --group-name trading-bot-sg \
+  --protocol tcp \
+  --port 22 \
+  --cidr $MY_IP/32
+
+# Allow outbound HTTPS for Telegram API
+aws ec2 authorize-security-group-egress \
+  --group-name trading-bot-sg \
+  --protocol tcp \
+  --port 443 \
+  --cidr 0.0.0.0/0
+
+# Launch EC2 instance (Ubuntu 22.04 LTS)
+# Recommended: t3.small (2 vCPU, 2GB RAM)
+aws ec2 run-instances \
+  --image-id ami-0c7217cdde317cfec \
+  --instance-type t3.small \
+  --key-name trading-bot-key \
+  --security-groups trading-bot-sg \
+  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":20,"VolumeType":"gp3"}}]' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=TradingBot}]'
 ```
 
-**Get EC2 IP:**
-- Go to EC2 Console → Instances
-- Copy "Public IPv4 address"
-
-### Step 3: Setup on EC2
-
-Once connected via SSH:
+### Step 2: Connect and Setup Instance
 
 ```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
+# Get instance public IP
+INSTANCE_IP=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=TradingBot" \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' \
+  --output text)
 
-# Install Python 3.9+
-sudo apt install python3 python3-pip python3-venv git -y
+# SSH into instance
+ssh -i trading-bot-key.pem ubuntu@$INSTANCE_IP
 
-# Clone repository
-git clone https://github.com/imnuman/trading-tool.git
-cd trading-tool
+# On EC2 instance - Install dependencies
+sudo apt-get update
+sudo apt-get install -y \
+  python3.11 \
+  python3.11-venv \
+  python3-pip \
+  git \
+  htop
 
-# Setup virtual environment
-python3 -m venv venv
+# Create project directory
+mkdir -p ~/trading-tool
+cd ~/trading-tool
+```
+
+### Step 3: Deploy Application
+
+```bash
+# On EC2 instance - Clone repository or upload files
+# Option A: Using git
+git clone https://github.com/yourusername/trading-tool.git .
+
+# Option B: Upload from local machine
+# On your local machine:
+scp -i trading-bot-key.pem -r /home/user/trading-tool/* ubuntu@$INSTANCE_IP:~/trading-tool/
+
+# Back on EC2 instance - Create virtual environment
+python3.11 -m venv venv
 source venv/bin/activate
 
 # Install dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Create secrets.env
+# Create config file
 nano config/secrets.env
-```
+# Paste your configuration (see Configuration section below)
 
-Add your credentials:
-```bash
-TELEGRAM_BOT_TOKEN=your_token_here
-OANDA_API_KEY=your_oanda_key_here
-OANDA_ACCOUNT_ID=your_account_id_here
-OANDA_ENVIRONMENT=practice
+# Create logs directory
+mkdir -p logs data/cache
 ```
 
 ### Step 4: Run Pre-Deployment
 
 ```bash
-# Still in venv
-source venv/bin/activate
-
-# Generate strategies
+# Generate strategies (takes 10-30 minutes)
 python3 scripts/pre_deploy.py
+
+# Verify database created
+ls -lh data/strategies.db
 ```
 
-This will take 5-30 minutes depending on strategy count.
-
-### Step 5: Setup as System Service (24/7 Operation)
-
-Create systemd service:
+### Step 5: Setup systemd Service
 
 ```bash
+# Copy service file
+sudo cp trading-bot.service /etc/systemd/system/
+
+# Edit service file with correct paths
 sudo nano /etc/systemd/system/trading-bot.service
-```
+# Update: User=ubuntu
+# Update: WorkingDirectory=/home/ubuntu/trading-tool
+# Update: ExecStart=/home/ubuntu/trading-tool/venv/bin/python3 /home/ubuntu/trading-tool/main.py
 
-Add:
-```ini
-[Unit]
-Description=Trading Tool Telegram Bot
-After=network.target
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/trading-tool
-Environment="PATH=/home/ubuntu/trading-tool/venv/bin"
-ExecStart=/home/ubuntu/trading-tool/venv/bin/python3 main.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-```bash
+# Reload systemd
 sudo systemctl daemon-reload
+
+# Enable service (start on boot)
 sudo systemctl enable trading-bot
+
+# Start service
 sudo systemctl start trading-bot
 
 # Check status
 sudo systemctl status trading-bot
 
-# View logs
+# View logs in real-time
 sudo journalctl -u trading-bot -f
 ```
 
----
-
-## Option 2: AWS Lightsail (Easier Setup)
-
-### Step 1: Create Lightsail Instance
-
-1. **Go to Lightsail:**
-   - https://lightsail.aws.amazon.com/
-   - Click "Create instance"
-
-2. **Choose:**
-   - **Platform:** Linux/Unix
-   - **Blueprint:** Ubuntu 22.04 LTS
-   - **Instance Plan:** $3.50/month (1 GB RAM) or higher
-   - **Name:** trading-tool
-
-3. **Click "Create instance"**
-
-### Step 2: Connect and Setup
-
-Click "Connect using SSH" in Lightsail console, then:
+### Step 6: Verify Bot is Running
 
 ```bash
-# Same setup as EC2
-git clone https://github.com/imnuman/trading-tool.git
-cd trading-tool
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Check if bot is responding
+# Send /start to your Telegram bot
 
-# Create secrets.env
-nano config/secrets.env
-# (Add credentials same as EC2)
+# Check logs
+tail -f logs/trading_bot.log
 
-# Run pre-deploy
-python3 scripts/pre_deploy.py
-
-# Setup systemd service (same as EC2)
-sudo nano /etc/systemd/system/trading-bot.service
-# (Copy service config from EC2 section)
-sudo systemctl enable trading-bot
-sudo systemctl start trading-bot
-```
-
----
-
-## Option 3: AWS Elastic Beanstalk (Managed)
-
-### Step 1: Prepare Application
-
-Create `Procfile`:
-```bash
-web: python3 main.py
-```
-
-Create `.ebextensions/python.config`:
-```yaml
-option_settings:
-  aws:elasticbeanstalk:application:environment:
-    PYTHONPATH: "/var/app/current:$PYTHONPATH"
-```
-
-### Step 2: Initialize Beanstalk
-
-```bash
-# Install EB CLI
-pip install awsebcli
-
-# Initialize
-eb init -p python-3.9 trading-tool --region us-east-1
-
-# Create environment
-eb create trading-tool-env
-
-# Set environment variables
-eb setenv TELEGRAM_BOT_TOKEN=your_token \
-          OANDA_API_KEY=your_key \
-          OANDA_ACCOUNT_ID=your_id \
-          OANDA_ENVIRONMENT=practice
-
-# Deploy
-eb deploy
-```
-
----
-
-## Environment Variables Setup
-
-For all options, set these in `config/secrets.env`:
-
-```bash
-# Telegram
-TELEGRAM_BOT_TOKEN=your_token_from_botfather
-
-# OANDA (for real-time data)
-OANDA_API_KEY=your_oanda_api_token
-OANDA_ACCOUNT_ID=your_account_id
-OANDA_ENVIRONMENT=practice  # or 'live'
-
-# Optional: AWS credentials (if needed)
-AWS_ACCESS_KEY_ID=your_aws_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret
-AWS_DEFAULT_REGION=us-east-1
-```
-
----
-
-## Running Pre-Deployment on AWS
-
-Before starting the bot, generate strategies:
-
-```bash
-cd /home/ubuntu/trading-tool
-source venv/bin/activate
-python3 scripts/pre_deploy.py
-```
-
-**Expected output:**
-- Fetches historical data (from OANDA or yfinance)
-- Generates 1000+ strategies
-- Backtests and filters
-- Saves to `data/strategies.db`
-
-**Time:** 5-30 minutes depending on strategy count
-
----
-
-## Monitoring & Logs
-
-### View Logs (Systemd Service):
-
-```bash
-# Real-time logs
-sudo journalctl -u trading-bot -f
-
-# Last 100 lines
-sudo journalctl -u trading-bot -n 100
-
-# Since boot
-sudo journalctl -u trading-bot -b
-```
-
-### View Application Logs:
-
-```bash
-# If logging to file
-tail -f logs/trading-tool.log
-
-# Or check Python output
-ps aux | grep python
-```
-
-### Monitor Resource Usage:
-
-```bash
-# CPU and memory
+# Check resource usage
 htop
 
-# Disk space
-df -h
-
-# Network
-netstat -tuln
+# Check database
+sqlite3 data/strategies.db "SELECT COUNT(*) FROM strategies;"
 ```
 
 ---
 
-## Auto-Restart on Reboot
+## Option 2: AWS ECS with Fargate
 
-If using systemd (EC2/Lightsail), the service auto-starts on reboot.
+### Step 1: Create ECR Repository
 
-To verify:
 ```bash
-sudo systemctl is-enabled trading-bot
-# Should return: enabled
+# Create container registry
+aws ecr create-repository --repository-name trading-bot
+
+# Get registry URL
+ECR_URL=$(aws ecr describe-repositories \
+  --repository-names trading-bot \
+  --query 'repositories[0].repositoryUri' \
+  --output text)
+
+# Login to ECR
+aws ecr get-login-password | docker login \
+  --username AWS \
+  --password-stdin $ECR_URL
+```
+
+### Step 2: Build and Push Docker Image
+
+```bash
+# On your local machine
+cd /home/user/trading-tool
+
+# Build Docker image
+docker build -t trading-bot:latest .
+
+# Tag for ECR
+docker tag trading-bot:latest $ECR_URL:latest
+
+# Push to ECR
+docker push $ECR_URL:latest
+```
+
+### Step 3: Create ECS Cluster
+
+```bash
+# Create ECS cluster
+aws ecs create-cluster --cluster-name trading-bot-cluster
+
+# Create task execution role
+aws iam create-role \
+  --role-name ecsTaskExecutionRole \
+  --assume-role-policy-document file://ecs-task-trust-policy.json
+
+# Attach policies
+aws iam attach-role-policy \
+  --role-name ecsTaskExecutionRole \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+```
+
+### Step 4: Create Task Definition
+
+Create `task-definition.json`:
+```json
+{
+  "family": "trading-bot",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "trading-bot",
+      "image": "YOUR_ECR_URL:latest",
+      "essential": true,
+      "environment": [
+        {"name": "TELEGRAM_BOT_TOKEN", "value": "YOUR_TOKEN"},
+        {"name": "ENABLE_AUTO_SIGNALS", "value": "true"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/trading-bot",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+```
+
+Register task:
+```bash
+aws ecs register-task-definition --cli-input-json file://task-definition.json
+```
+
+### Step 5: Create Service
+
+```bash
+# Create service
+aws ecs create-service \
+  --cluster trading-bot-cluster \
+  --service-name trading-bot-service \
+  --task-definition trading-bot \
+  --desired-count 1 \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx],securityGroups=[sg-xxx],assignPublicIp=ENABLED}"
 ```
 
 ---
 
-## Updating the Application
+## Option 3: AWS Lambda (Not Recommended)
 
-### Pull Latest Code:
+**Why not recommended:**
+- 15-minute timeout limit (conflicts with 24/7 polling)
+- Cold start delays
+- Complex state management
+- Not suitable for long-running processes
+
+**Alternative approach:**
+- Use Lambda for scheduled signal checks (EventBridge trigger every hour)
+- Store state in DynamoDB
+- Use Step Functions for orchestration
+
+---
+
+## Configuration
+
+### secrets.env for Production
 
 ```bash
-cd /home/ubuntu/trading-tool
-git pull origin main
+# =============================================================================
+# PRODUCTION CONFIGURATION
+# =============================================================================
 
-# Restart service
-sudo systemctl restart trading-bot
+# Telegram
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_ALLOWED_USERS=123456789
+
+# 24/7 Auto Signals
+ENABLE_AUTO_SIGNALS=true
+AUTO_SIGNAL_INTERVAL=3600
+AUTO_SIGNAL_PAIRS=EUR/USD,GBP/USD,XAU/USD
+
+# Trading
+MIN_CONFIDENCE_THRESHOLD=80.0
+MIN_AGREEMENT_THRESHOLD=0.80
+DEFAULT_PAIRS=EUR/USD,GBP/USD,XAU/USD
+
+# Logging
+LOG_LEVEL=INFO
+LOG_FILE=./logs/trading_bot.log
+
+# Paths
+DATABASE_PATH=./data/strategies.db
+CACHE_DIR=./data/cache
 ```
 
-### Update Dependencies:
+---
+
+## Monitoring & Logging
+
+### CloudWatch Setup
 
 ```bash
-source venv/bin/activate
-pip install -r requirements.txt --upgrade
-sudo systemctl restart trading-bot
+# Install CloudWatch agent on EC2
+wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+sudo dpkg -i amazon-cloudwatch-agent.deb
+
+# Configure agent
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-config-wizard
+
+# Monitor logs
+aws logs tail /aws/ec2/trading-bot --follow
+```
+
+### Key Metrics to Monitor
+
+1. **Bot Uptime**: CloudWatch custom metric
+2. **Signal Generation Rate**: Signals per hour
+3. **Memory Usage**: Should stay < 1.5GB
+4. **CPU Usage**: Should stay < 50%
+5. **Error Rate**: Errors per hour
+
+### Set Up Alerts
+
+```bash
+# Create SNS topic for alerts
+aws sns create-topic --name trading-bot-alerts
+
+# Subscribe email
+aws sns subscribe \
+  --topic-arn arn:aws:sns:us-east-1:123456789:trading-bot-alerts \
+  --protocol email \
+  --notification-endpoint your-email@example.com
+
+# Create CloudWatch alarm
+aws cloudwatch put-metric-alarm \
+  --alarm-name trading-bot-high-cpu \
+  --alarm-description "Alert when CPU > 80%" \
+  --metric-name CPUUtilization \
+  --namespace AWS/EC2 \
+  --statistic Average \
+  --period 300 \
+  --threshold 80 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 2 \
+  --alarm-actions arn:aws:sns:us-east-1:123456789:trading-bot-alerts
 ```
 
 ---
 
 ## Cost Estimation
 
-### EC2 t2.micro (Free Tier):
-- **First 12 months:** FREE (750 hours/month)
-- **After:** ~$7-10/month
+### EC2 Deployment (Recommended)
 
-### EC2 t3.micro:
-- **Cost:** ~$7-10/month
+| Resource | Specification | Monthly Cost |
+|----------|--------------|--------------|
+| EC2 t3.small | 2 vCPU, 2GB RAM | $15.18 |
+| EBS gp3 | 20GB storage | $1.60 |
+| Data Transfer | ~10GB/month | $0.90 |
+| CloudWatch | Basic monitoring | Free |
+| **Total** | | **~$18/month** |
 
-### Lightsail $3.50 plan:
-- **Cost:** $3.50/month
-- **Includes:** 1 GB RAM, 1 vCPU, 40 GB SSD
+### ECS Fargate
 
-### Lightsail $5 plan:
-- **Cost:** $5/month
-- **Includes:** 2 GB RAM, 1 vCPU, 60 GB SSD
+| Resource | Specification | Monthly Cost |
+|----------|--------------|--------------|
+| Fargate task | 1 vCPU, 2GB RAM | $29.55 |
+| Data Transfer | ~10GB/month | $0.90 |
+| CloudWatch | Logs | $5.00 |
+| **Total** | | **~$35/month** |
 
-### Data Transfer:
-- **First 100 GB/month:** Usually free
-- **After:** ~$0.09/GB
+### Cost Optimization Tips
 
-**Total Estimated Cost:** $3.50 - $10/month
+1. **Use Reserved Instances**: Save 30-50% for 1-year commitment
+2. **Stop during non-trading hours**: Save 50% if not needed 24/7
+3. **Use Spot Instances**: Save up to 90% (but risk interruption)
+4. **Compress logs**: Reduce CloudWatch costs
+5. **Use S3 for backups**: Cheaper than EBS snapshots
 
 ---
 
-## Security Best Practices
+## Backup Strategy
 
-1. **Keep secrets.env secure:**
-   ```bash
-   chmod 600 config/secrets.env
-   ```
+### Automated Daily Backups
 
-2. **Firewall (Security Groups):**
-   - Only allow SSH from your IP
-   - No public web ports needed
+Create backup script:
+```bash
+#!/bin/bash
+# /home/ubuntu/trading-tool/scripts/backup.sh
 
-3. **Regular Updates:**
-   ```bash
-   sudo apt update && sudo apt upgrade -y
-   ```
+DATE=$(date +%Y%m%d)
+S3_BUCKET="your-backup-bucket"
 
-4. **Use IAM roles** (advanced):
-   - Attach IAM role to EC2 instance
-   - Don't store AWS keys in code
+# Backup database
+aws s3 cp /home/ubuntu/trading-tool/data/strategies.db \
+  s3://$S3_BUCKET/backups/strategies-$DATE.db
+
+# Backup logs
+tar -czf /tmp/logs-$DATE.tar.gz /home/ubuntu/trading-tool/logs
+aws s3 cp /tmp/logs-$DATE.tar.gz \
+  s3://$S3_BUCKET/backups/logs-$DATE.tar.gz
+rm /tmp/logs-$DATE.tar.gz
+
+# Keep only 30 days of backups
+aws s3 ls s3://$S3_BUCKET/backups/ | \
+  sort | head -n -30 | awk '{print $4}' | \
+  xargs -I {} aws s3 rm s3://$S3_BUCKET/backups/{}
+```
+
+Add to crontab:
+```bash
+crontab -e
+# Add line:
+0 2 * * * /home/ubuntu/trading-tool/scripts/backup.sh >> /home/ubuntu/trading-tool/logs/backup.log 2>&1
+```
 
 ---
 
 ## Troubleshooting
 
-### Bot Not Starting:
+### Bot Won't Start
 
 ```bash
 # Check logs
 sudo journalctl -u trading-bot -n 50
 
-# Check if process is running
-ps aux | grep python
+# Check if port is in use
+sudo netstat -tlnp | grep python
+
+# Check permissions
+ls -la /home/ubuntu/trading-tool/data
 
 # Test manually
 cd /home/ubuntu/trading-tool
@@ -402,70 +545,94 @@ source venv/bin/activate
 python3 main.py
 ```
 
-### Out of Memory:
-
-- Upgrade to larger instance (t3.small or Lightsail $10 plan)
-- Reduce number of strategies in ensemble
-
-### Connection Issues:
+### Bot Crashes Frequently
 
 ```bash
-# Test OANDA connection
-python3 scripts/test_oanda_connection.py
+# Check memory usage
+free -h
 
-# Test Telegram
-curl https://api.telegram.org/bot<TOKEN>/getMe
+# Check disk space
+df -h
+
+# Check for OOM kills
+sudo dmesg | grep -i kill
+
+# Increase swap
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
+
+### Not Receiving Signals
+
+```bash
+# Check bot is running
+sudo systemctl status trading-bot
+
+# Check Telegram connection
+curl -s "https://api.telegram.org/bot<YOUR_TOKEN>/getMe"
+
+# Check signal generation
+tail -f logs/trading_bot.log | grep signal
+
+# Test signal manually via Telegram
+/signal
+```
+
+### Database Locked
+
+```bash
+# Check if database file exists
+ls -lh data/strategies.db
+
+# Check for write permissions
+ls -la data/
+
+# Kill any locked processes
+sudo lsof data/strategies.db
+sudo kill -9 <PID>
 ```
 
 ---
 
-## Quick Deploy Script
+## Security Best Practices
 
-Save as `deploy.sh`:
+1. **Use IAM roles**: Never hardcode AWS credentials
+2. **Rotate bot token**: Change Telegram token every 90 days
+3. **Enable MFA**: On AWS account
+4. **Restrict SSH**: Only from your IP
+5. **Use secrets manager**: For production credentials
+6. **Enable CloudTrail**: Audit all API calls
+7. **Regular updates**: Keep system and packages updated
 
 ```bash
-#!/bin/bash
-set -e
-
-echo "🚀 Deploying Trading Tool..."
-
-# Pull latest
-git pull origin main
-
-# Activate venv
-source venv/bin/activate
-
-# Update dependencies
-pip install -r requirements.txt --quiet
-
-# Restart service
-sudo systemctl restart trading-bot
-
-echo "✅ Deployment complete!"
-echo "View logs: sudo journalctl -u trading-bot -f"
-```
-
-Make executable:
-```bash
-chmod +x deploy.sh
-```
-
-Use:
-```bash
-./deploy.sh
+# Auto-update security patches
+sudo apt-get install unattended-upgrades
+sudo dpkg-reconfigure -plow unattended-upgrades
 ```
 
 ---
 
-## Next Steps After Deployment
+## Next Steps
 
-1. ✅ Test bot in Telegram: `/signal`, `/chart`, `/stats`
-2. ✅ Monitor logs for first 24 hours
-3. ✅ Set up CloudWatch alarms (optional)
-4. ✅ Schedule regular backups of `data/strategies.db`
-5. ✅ Set up automated updates (git pull + restart)
+After deployment:
+
+1. **Monitor for 24-48 hours**: Watch logs and metrics
+2. **Test auto-signals**: Verify notifications arrive
+3. **Set up alerts**: Email/SMS for critical errors
+4. **Document**: Note any custom configuration
+5. **Backup**: Verify backups are working
+6. **Optimize**: Adjust thresholds based on performance
 
 ---
 
-**Ready to deploy? Start with Option 1 (EC2) for full control!** 🚀
+## Support
 
+- Issues: https://github.com/yourusername/trading-tool/issues
+- Documentation: /home/user/trading-tool/TESTING.md
+- Status: /home/user/trading-tool/STATUS.md
+
+---
+
+**Happy Trading! 🚀**

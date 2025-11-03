@@ -1,0 +1,61 @@
+# ==============================================================================
+# Trading Tool - systemd Service File for 24/7 Operation
+# ==============================================================================
+#
+# Installation:
+#   1. Copy this file to /etc/systemd/system/trading-bot.service
+#   2. Update paths and user below
+#   3. Run: sudo systemctl daemon-reload
+#   4. Run: sudo systemctl enable trading-bot
+#   5. Run: sudo systemctl start trading-bot
+#
+# Management:
+#   Status:  sudo systemctl status trading-bot
+#   Stop:    sudo systemctl stop trading-bot
+#   Restart: sudo systemctl restart trading-bot
+#   Logs:    sudo journalctl -u trading-bot -f
+#
+# ==============================================================================
+
+[Unit]
+Description=Trading Tool - AI-Powered Forex Signal Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/trading-tool
+Environment="PATH=/home/ubuntu/trading-tool/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Main command
+ExecStart=/home/ubuntu/trading-tool/venv/bin/python3 /home/ubuntu/trading-tool/main.py
+
+# Restart policy for 24/7 operation
+Restart=always
+RestartSec=10
+StartLimitInterval=5min
+StartLimitBurst=5
+
+# Graceful shutdown
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=2G
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trading-bot
+
+[Install]
+WantedBy=multi-user.target
