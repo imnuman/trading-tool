@@ -1,0 +1,436 @@
+# =============================================================================
+# Risk Management Configuration for 60-65% Win Rate Blueprint
+# =============================================================================
+
+# Position Sizing Configuration
+position_sizing:
+  method: "confidence_based"
+
+  # Confidence-based sizing rules
+  confidence_tiers:
+    tier_1:
+      confidence_range: [80, 100]
+      risk_per_trade: 0.01  # 1% of account
+      description: "High confidence signals"
+
+    tier_2:
+      confidence_range: [70, 79]
+      risk_per_trade: 0.0075  # 0.75% of account
+      description: "Medium-high confidence"
+
+    tier_3:
+      confidence_range: [65, 69]
+      risk_per_trade: 0.005  # 0.5% of account
+      description: "Medium confidence"
+
+    tier_4:
+      confidence_range: [0, 64]
+      risk_per_trade: 0.0  # No trade
+      description: "Below confidence threshold"
+
+  # Position size limits
+  limits:
+    max_position_size_pct: 0.01  # Max 1% per trade
+    min_position_size_pct: 0.005  # Min 0.5% per trade
+    max_position_size_usd: 100000  # Max $100k absolute
+
+# Confidence Scoring Configuration
+confidence_scoring:
+  method: "ensemble_average"
+
+  # Component weights
+  components:
+    lstm_prediction:
+      weight: 0.30
+      description: "LSTM price direction confidence"
+
+    transformer_trend:
+      weight: 0.25
+      description: "Transformer trend alignment score"
+
+    rl_agent_ensemble:
+      weight: 0.35
+      description: "Average of top 5 RL agents"
+
+    ensemble_agreement:
+      weight: 0.10
+      description: "Percentage agreement among agents"
+
+  # Confidence thresholds
+  thresholds:
+    minimum_signal: 0.65  # 65% minimum to generate signal
+    high_confidence: 0.80  # 80%+ = high confidence
+    max_confidence: 1.00
+
+  # Calibration
+  calibration:
+    enabled: true
+    method: "isotonic_regression"
+    recalibrate_frequency_days: 7
+    min_samples_for_calibration: 100
+
+# Transaction Cost Modeling
+transaction_costs:
+  # Realistic spreads in pips
+  spreads:
+    EUR_USD:
+      typical_pips: 3
+      volatile_pips: 5
+      off_hours_pips: 4
+
+    GBP_USD:
+      typical_pips: 4
+      volatile_pips: 7
+      off_hours_pips: 6
+
+    XAU_USD:
+      typical_pips: 7
+      volatile_pips: 12
+      off_hours_pips: 10
+
+  # Slippage modeling
+  slippage:
+    normal_market_pips: 1
+    volatile_market_pips: 3
+    news_event_pips: 5
+
+  # Commission (if applicable)
+  commission:
+    per_lot_usd: 0  # Spread-only brokers
+    per_side: false
+
+  # Total cost calculation
+  total_cost_formula: "spread + slippage + commission"
+
+  # Cost impact on signals
+  cost_filtering:
+    enabled: true
+    min_reward_risk_after_costs: 2.0  # Must have 2:1 R:R after costs
+
+# Stop Loss & Take Profit Configuration
+stop_loss:
+  method: "atr_based"
+
+  atr_multiplier:
+    conservative: 2.0  # 2x ATR
+    balanced: 1.5      # 1.5x ATR
+    aggressive: 1.0    # 1x ATR
+
+  # Absolute limits
+  limits:
+    min_pips: 10
+    max_pips: 200
+    max_percentage: 0.02  # 2% account max
+
+  # Trailing stop
+  trailing:
+    enabled: true
+    activation_profit_pips: 20
+    trail_distance_pips: 10
+
+take_profit:
+  method: "risk_reward_ratio"
+
+  # Risk:Reward ratios by confidence
+  risk_reward_ratios:
+    high_confidence: 3.0    # 3:1 R:R for 80%+ confidence
+    medium_confidence: 2.5  # 2.5:1 for 70-79%
+    low_confidence: 2.0     # 2:1 for 65-69%
+
+  # Absolute limits
+  limits:
+    min_pips: 20
+    max_pips: 500
+
+  # Partial profit taking
+  partial_take_profit:
+    enabled: true
+    levels:
+      - profit_pips: 30
+        close_percentage: 0.50  # Close 50% at 30 pips profit
+      - profit_pips: 60
+        close_percentage: 0.25  # Close 25% more at 60 pips
+
+# Risk Limits
+risk_limits:
+  # Per-trade limits
+  per_trade:
+    max_risk_percentage: 0.01  # 1% max
+    max_position_value_usd: 100000
+
+  # Daily limits
+  daily:
+    max_trades: 10
+    max_loss_percentage: 0.03  # 3% max daily loss
+    max_loss_usd: 3000
+    stop_trading_if_hit: true
+
+  # Weekly limits
+  weekly:
+    max_trades: 30
+    max_loss_percentage: 0.07  # 7% max weekly loss
+    max_loss_usd: 7000
+    stop_trading_if_hit: true
+
+  # Monthly limits
+  monthly:
+    max_drawdown_percentage: 0.15  # 15% max monthly drawdown
+    max_drawdown_usd: 15000
+
+  # Portfolio limits
+  portfolio:
+    max_concurrent_positions: 3
+    max_correlated_positions: 2  # Max 2 correlated pairs
+    max_exposure_per_currency: 0.02  # 2% per currency
+
+# Correlation Management
+correlation:
+  # Correlation matrix update frequency
+  update_frequency_days: 7
+  lookback_days: 90
+
+  # Correlation thresholds
+  thresholds:
+    high_correlation: 0.70
+    medium_correlation: 0.50
+    low_correlation: 0.30
+
+  # Position correlation rules
+  rules:
+    - condition: "correlation > 0.70"
+      action: "block_new_position"
+      description: "Block if highly correlated position exists"
+
+    - condition: "correlation > 0.50"
+      action: "reduce_size_by_50%"
+      description: "Reduce size for medium correlation"
+
+  # Currency exposure tracking
+  currency_exposure:
+    track_by_currency: true
+    max_net_exposure_per_currency: 0.03  # 3%
+
+    currencies:
+      - "USD"
+      - "EUR"
+      - "GBP"
+      - "JPY"
+      - "AUD"
+      - "CHF"
+
+# News Filter & Calendar
+news_filter:
+  enabled: true
+
+  # High-impact news events
+  high_impact_events:
+    - "NFP"  # Non-Farm Payrolls
+    - "FOMC"  # Federal Reserve meetings
+    - "ECB_DECISION"
+    - "BOE_DECISION"
+    - "CPI_RELEASE"
+    - "GDP_RELEASE"
+
+  # Trading restrictions during news
+  restrictions:
+    before_event_minutes: 30
+    after_event_minutes: 30
+    action: "no_new_positions"
+    close_existing: false
+
+  # News sentiment filter
+  sentiment_filter:
+    enabled: true
+    block_if_extreme: true
+    extreme_threshold: 0.80  # |sentiment| > 0.8
+
+# Market Regime Filter
+regime_filter:
+  enabled: true
+
+  regimes:
+    trending_up:
+      characteristics: "price > SMA200, ADX > 25"
+      preferred_strategy: "trend_following"
+
+    trending_down:
+      characteristics: "price < SMA200, ADX > 25"
+      preferred_strategy: "trend_following"
+
+    ranging:
+      characteristics: "ADX < 20, Bollinger width narrow"
+      preferred_strategy: "mean_reversion"
+
+    volatile:
+      characteristics: "ATR > 1.5x average"
+      action: "reduce_position_size_by_50%"
+
+  # Regime-based adjustments
+  adjustments:
+    trending:
+      confidence_boost: 0.05  # +5% confidence in trends
+      take_profit_multiplier: 1.5
+
+    ranging:
+      confidence_penalty: 0.05  # -5% in ranging
+      stop_loss_multiplier: 0.8
+
+    volatile:
+      position_size_multiplier: 0.5
+      stop_loss_multiplier: 1.5
+
+# Time-Based Filters
+time_filters:
+  # Trading sessions
+  sessions:
+    london:
+      start_utc: "07:00"
+      end_utc: "16:00"
+      liquidity: "high"
+
+    new_york:
+      start_utc: "12:00"
+      end_utc: "21:00"
+      liquidity: "high"
+
+    overlap:
+      start_utc: "12:00"
+      end_utc: "16:00"
+      liquidity: "very_high"
+      confidence_boost: 0.03  # +3% during overlap
+
+    asian:
+      start_utc: "00:00"
+      end_utc: "09:00"
+      liquidity: "low"
+      reduce_position_size: 0.75  # 75% of normal size
+
+  # Day of week filters
+  day_of_week:
+    monday:
+      description: "Week opening, can be choppy"
+      confidence_adjustment: -0.02  # -2%
+
+    friday:
+      description: "Week closing, profit-taking"
+      close_positions_by: "20:00"
+      no_new_positions_after: "18:00"
+
+  # Time-based restrictions
+  restrictions:
+    weekend_trading: false
+    holiday_trading: false
+    low_liquidity_hours:
+      action: "reduce_size_by_50%"
+      hours: ["22:00-01:00"]  # UTC
+
+# Drawdown Management
+drawdown_management:
+  # Drawdown thresholds
+  thresholds:
+    level_1:
+      drawdown_percentage: 0.05  # 5%
+      action: "reduce_risk_by_25%"
+
+    level_2:
+      drawdown_percentage: 0.10  # 10%
+      action: "reduce_risk_by_50%"
+
+    level_3:
+      drawdown_percentage: 0.15  # 15%
+      action: "stop_trading"
+
+  # Recovery rules
+  recovery:
+    resume_trading_after:
+      condition: "drawdown < 10%"
+      consecutive_days: 3
+
+    gradual_size_increase:
+      enabled: true
+      increase_per_day: 0.10  # 10% per day back to normal
+
+# Performance Monitoring & Alerts
+monitoring:
+  # Real-time metrics
+  track_metrics:
+    - "win_rate"
+    - "profit_factor"
+    - "sharpe_ratio"
+    - "max_drawdown"
+    - "average_r:r"
+    - "confidence_accuracy"
+
+  # Alert conditions
+  alerts:
+    win_rate_below:
+      threshold: 0.55  # Alert if win rate < 55%
+      lookback_trades: 50
+
+    drawdown_approaching:
+      threshold: 0.12  # Alert at 12% drawdown
+      action: "notify_immediately"
+
+    confidence_calibration_drift:
+      threshold: 0.10  # 10% drift in confidence accuracy
+      action: "recalibrate_model"
+
+  # Performance degradation detection
+  degradation_detection:
+    enabled: true
+    lookback_trades: 100
+
+    triggers:
+      - metric: "win_rate"
+        threshold_below: 0.55
+        action: "stop_trading_and_alert"
+
+      - metric: "profit_factor"
+        threshold_below: 1.3
+        action: "reduce_position_size"
+
+      - metric: "sharpe_ratio"
+        threshold_below: 1.0
+        action: "increase_confidence_threshold"
+
+# Emergency Controls
+emergency_controls:
+  # Kill switch
+  kill_switch:
+    enabled: true
+    triggers:
+      - "daily_loss_limit_hit"
+      - "weekly_loss_limit_hit"
+      - "max_drawdown_exceeded"
+      - "manual_activation"
+
+  # Circuit breaker
+  circuit_breaker:
+    enabled: true
+    consecutive_losses: 5
+    cooldown_minutes: 60
+    description: "Pause trading after 5 consecutive losses"
+
+  # Manual override
+  manual_override:
+    enabled: true
+    require_confirmation: true
+    log_all_overrides: true
+
+# Backtesting Risk Parameters
+backtesting:
+  # Use same risk rules in backtest
+  apply_all_rules: true
+
+  # Additional backtest-specific rules
+  assumptions:
+    execution_quality: "realistic"  # vs "perfect"
+    always_apply_slippage: true
+    always_apply_spreads: true
+    respect_trading_hours: true
+
+  # Pessimistic scenario testing
+  pessimistic_scenario:
+    spread_multiplier: 1.5  # 1.5x normal spreads
+    slippage_multiplier: 2.0  # 2x normal slippage
+    description: "Worst-case transaction costs"

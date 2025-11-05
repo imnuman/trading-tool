@@ -42,8 +42,17 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Model files (can be large)
-models/
+# Model files (can be large) - but allow .py files
+models/**/*.h5
+models/**/*.pkl
+models/**/*.joblib
+models/**/*.pt
+models/**/*.pth
+models/**/*.onnx
+models/**/*.pb
+models/**/checkpoint
+models/**/checkpoints/*.h5
+models/**/checkpoints/*.pkl
 *.h5
 *.pkl
 *.joblib

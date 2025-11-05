@@ -1,0 +1,381 @@
+# =============================================================================
+# Data Sources Configuration for 60-65% Win Rate Blueprint
+# =============================================================================
+
+# Trading Pairs
+trading_pairs:
+  primary:
+    - "EUR/USD"
+    - "GBP/USD"
+    - "XAU/USD"
+
+  # Additional pairs for correlation analysis
+  secondary:
+    - "USD/JPY"
+    - "AUD/USD"
+    - "USD/CHF"
+
+# OANDA Configuration (Real-time & Historical Data)
+oanda:
+  enabled: true
+  api_version: "v3"
+  base_url:
+    practice: "https://api-fxpractice.oanda.com"
+    live: "https://api-fxtrade.oanda.com"
+
+  # Set via environment variables:
+  # OANDA_API_KEY, OANDA_ACCOUNT_ID, OANDA_ENVIRONMENT
+
+  data_collection:
+    # Real-time streaming
+    streaming:
+      enabled: true
+      reconnect_on_error: true
+      max_reconnect_attempts: 10
+
+    # Historical data
+    historical:
+      max_years: 15  # Collect 15 years of data
+      granularity: "D"  # Daily candles
+      batch_size: 5000  # Candles per request
+      rate_limit_delay: 0.5  # Seconds between requests
+
+  instruments:
+    EUR_USD: "EUR_USD"
+    GBP_USD: "GBP_USD"
+    XAU_USD: "XAU_USD"
+    USD_JPY: "USD_JPY"
+    AUD_USD: "AUD_USD"
+    USD_CHF: "USD_CHF"
+
+# TrueFX Configuration (Order Flow Proxy)
+truefx:
+  enabled: true
+  base_url: "https://webrates.truefx.com/rates"
+  api_format: "csv"
+
+  # TrueFX is free, no API key required
+  update_frequency_seconds: 1  # Tick-level data
+
+  pairs:
+    - "EUR/USD"
+    - "GBP/USD"
+    - "USD/JPY"
+    - "AUD/USD"
+    - "USD/CHF"
+
+  features_to_extract:
+    - "bid_ask_spread"
+    - "tick_volume"
+    - "price_momentum"
+    - "order_flow_imbalance"
+    - "liquidity_proxy"
+
+# NewsAPI Configuration (Sentiment Analysis)
+newsapi:
+  enabled: true
+  base_url: "https://newsapi.org/v2"
+  # Set via environment variable: NEWSAPI_API_KEY
+
+  free_tier:
+    requests_per_day: 100
+    max_results_per_request: 100
+
+  data_collection:
+    update_frequency_minutes: 30
+    lookback_hours: 24
+
+    query_terms:
+      forex:
+        - "forex"
+        - "currency"
+        - "EUR/USD"
+        - "GBP/USD"
+        - "dollar"
+        - "euro"
+        - "pound"
+
+      gold:
+        - "gold"
+        - "XAU"
+        - "precious metals"
+
+      economic:
+        - "Federal Reserve"
+        - "ECB"
+        - "Bank of England"
+        - "interest rates"
+        - "inflation"
+        - "GDP"
+
+    sources:
+      - "bloomberg"
+      - "reuters"
+      - "financial-times"
+      - "the-wall-street-journal"
+
+  sentiment_analysis:
+    model: "finbert"  # FinBERT model for financial sentiment
+    threshold_positive: 0.3
+    threshold_negative: -0.3
+
+    sentiment_features:
+      - "overall_sentiment"  # [-1, 1]
+      - "sentiment_strength"  # [0, 1]
+      - "news_volume"  # Count in last 24h
+      - "sentiment_change"  # Change from previous period
+
+# FRED Configuration (Macro Economic Data)
+fred:
+  enabled: true
+  base_url: "https://api.stlouisfed.org/fred/series/observations"
+  # Set via environment variable: FRED_API_KEY
+  # Free tier: 120 requests per minute
+
+  data_collection:
+    update_frequency_hours: 24  # Daily update
+    lookback_years: 10
+
+  series:
+    # Interest Rates
+    fed_funds_rate:
+      series_id: "DFF"
+      description: "Federal Funds Effective Rate"
+      frequency: "daily"
+
+    us_10y_yield:
+      series_id: "DGS10"
+      description: "10-Year Treasury Constant Maturity Rate"
+      frequency: "daily"
+
+    # Inflation
+    cpi:
+      series_id: "CPIAUCSL"
+      description: "Consumer Price Index"
+      frequency: "monthly"
+
+    core_cpi:
+      series_id: "CPILFESL"
+      description: "Core CPI (ex food & energy)"
+      frequency: "monthly"
+
+    # Economic Growth
+    gdp:
+      series_id: "GDP"
+      description: "Gross Domestic Product"
+      frequency: "quarterly"
+
+    unemployment:
+      series_id: "UNRATE"
+      description: "Unemployment Rate"
+      frequency: "monthly"
+
+    # Dollar Index
+    dollar_index:
+      series_id: "DTWEXBGS"
+      description: "Trade Weighted U.S. Dollar Index"
+      frequency: "daily"
+
+  macro_features:
+    - "interest_rate_differential"
+    - "inflation_trend"
+    - "gdp_growth_rate"
+    - "unemployment_change"
+    - "dollar_strength"
+
+# Feature Engineering Configuration
+features:
+  total_features: 50
+
+  categories:
+    price_features:
+      count: 20
+      types:
+        - "returns_1d"
+        - "returns_5d"
+        - "returns_20d"
+        - "log_returns"
+        - "high_low_range"
+        - "close_open_diff"
+        - "price_to_sma20_ratio"
+        - "price_to_sma50_ratio"
+        - "price_acceleration"
+        - "candle_body_size"
+        - "candle_wick_ratio"
+        - "gap_percentage"
+        - "intraday_volatility"
+        - "price_deviation_from_vwap"
+        - "cumulative_return_5d"
+        - "cumulative_return_20d"
+        - "price_momentum_1d"
+        - "price_momentum_5d"
+        - "normalized_high"
+        - "normalized_low"
+
+    technical_indicators:
+      count: 20
+      types:
+        - "sma_20"
+        - "sma_50"
+        - "sma_200"
+        - "ema_12"
+        - "ema_26"
+        - "ema_50"
+        - "rsi_14"
+        - "rsi_21"
+        - "macd"
+        - "macd_signal"
+        - "macd_histogram"
+        - "atr_14"
+        - "atr_21"
+        - "bollinger_upper"
+        - "bollinger_lower"
+        - "bollinger_width"
+        - "stochastic_k"
+        - "stochastic_d"
+        - "adx_14"
+        - "cci_20"
+
+    order_flow_proxies:
+      count: 5
+      types:
+        - "bid_ask_spread"
+        - "tick_volume"
+        - "price_momentum_ticks"
+        - "order_flow_imbalance"
+        - "liquidity_proxy"
+      source: "truefx"
+
+    time_context:
+      count: 5
+      types:
+        - "hour_of_day"
+        - "day_of_week"
+        - "is_london_session"
+        - "is_ny_session"
+        - "is_overlap_session"
+
+  normalization:
+    method: "standardization"  # z-score normalization
+    fit_on: "training_data"
+    clip_outliers: 3  # Clip at ±3 standard deviations
+
+  validation:
+    check_missing_values: true
+    check_infinite_values: true
+    check_distribution_shift: true
+    max_correlation: 0.95  # Remove highly correlated features
+
+# Data Quality & Validation
+data_quality:
+  validation_rules:
+    # Price data validation
+    price_data:
+      check_ohlc_relationship: true  # O,H,L,C consistency
+      max_gap_percentage: 0.05  # 5% max gap
+      min_volume: 1000
+      check_trading_hours: false  # Forex is 24/5
+
+    # Missing data handling
+    missing_data:
+      max_missing_percentage: 0.05  # 5% threshold
+      imputation_method: "forward_fill"
+      drop_if_exceeds: true
+
+    # Outlier detection
+    outliers:
+      method: "iqr"  # Interquartile range
+      iqr_multiplier: 3.0
+      action: "clip"  # clip or remove
+
+  # Data synchronization
+  synchronization:
+    # Align all data sources to same timestamps
+    method: "forward_fill"
+    max_fill_gap_minutes: 60
+
+# Data Storage Configuration
+storage:
+  # Raw data
+  raw_data:
+    path: "./data/raw"
+    format: "parquet"
+    compression: "snappy"
+    partition_by: "date"
+
+  # Processed data
+  processed_data:
+    path: "./data/processed"
+    format: "parquet"
+    compression: "snappy"
+
+  # Synthetic data
+  synthetic_data:
+    path: "./data/synthetic"
+    format: "parquet"
+    tag_synthetic: true  # Mark synthetic data
+
+  # Cache
+  cache:
+    enabled: true
+    path: "./data/cache"
+    ttl_hours: 24
+    max_size_gb: 10
+
+# Data Pipeline Configuration
+pipeline:
+  # Execution order
+  stages:
+    1: "collect_raw_data"
+    2: "validate_quality"
+    3: "engineer_features"
+    4: "normalize_features"
+    5: "generate_synthetic"  # Optional
+    6: "split_train_test"
+    7: "save_processed"
+
+  # Scheduling
+  schedule:
+    data_collection:
+      oanda: "realtime"
+      truefx: "realtime"
+      newsapi: "every_30_minutes"
+      fred: "daily_at_9am_utc"
+
+    feature_engineering: "every_1_hour"
+
+    retraining_data_prep: "monthly"
+
+# Historical Data Collection (Initial Setup)
+initial_data_collection:
+  enabled: false  # Set to true for first-time setup
+
+  tasks:
+    - name: "Download 15 years OANDA data"
+      pairs: ["EUR/USD", "GBP/USD", "XAU/USD"]
+      years: 15
+      estimated_time_hours: 2
+
+    - name: "Download FRED macro data"
+      series: ["DFF", "DGS10", "CPIAUCSL", "GDP", "UNRATE"]
+      years: 10
+      estimated_time_minutes: 30
+
+    - name: "Collect TrueFX historical"
+      pairs: ["EUR/USD", "GBP/USD"]
+      years: 1
+      estimated_time_hours: 1
+
+    - name: "Engineer all features"
+      estimated_time_hours: 1
+
+# Monitoring & Alerts
+monitoring:
+  data_freshness:
+    alert_if_stale_minutes: 120
+
+  data_quality_alerts:
+    - "missing_data_threshold_exceeded"
+    - "outlier_percentage_high"
+    - "feature_distribution_shift"
+    - "api_request_failures"
